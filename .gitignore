@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+knowledge/.nosync/
+knowledge/_index.db
+knowledge/storage
+storage
+**/.DS_Store
+**/.pytest_cache
+**/_faiss/
+
+# Quartz: 자체 git repo, V2.6에서 별도 종속 관계 결정 예정
+apps/quartz/

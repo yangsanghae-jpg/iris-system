@@ -1,0 +1,16 @@
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.nosync
+**/_index.db
+**/_index.db-wal
+**/_index.db-shm
+**/storage
+**/.git
+**/.DS_Store
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/eval_runs
+**/_faiss
+docs
