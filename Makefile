@@ -1,4 +1,5 @@
-.PHONY: ingest-reference reindex-fts stats clean-reference
+.PHONY: ingest-reference reindex-fts stats clean-reference \
+        migrate-v2.6 migrate-v2.6-status migrate-v2.6-down migrate-v2.6-dry
 
 PYTHON ?= python3
 ROOT := $(shell pwd)
@@ -17,3 +18,19 @@ stats:
 
 clean-reference:
 	@sqlite3 knowledge/_index.db "DELETE FROM documents WHERE lane='reference';"
+
+# --- V2.5.1 Phase 1 — Schema 마이그레이션 ---
+
+migrate-v2.6-status:
+	$(PYTHON) -m apps.ingest.migrate status
+
+migrate-v2.6-dry:
+	$(PYTHON) -m apps.ingest.migrate up --dry-run
+
+migrate-v2.6:
+	$(PYTHON) -m apps.ingest.migrate up
+
+migrate-v2.6-down:
+	@echo "사용: make migrate-v2.6-down TO=000"
+	@test -n "$(TO)" || (echo "[ERROR] TO=<version> 필요"; exit 2)
+	$(PYTHON) -m apps.ingest.migrate down --to $(TO)
