@@ -95,8 +95,10 @@ def run_item(item: GoldenItem, top_k: int = 5) -> ItemResult:
             )
             returned = [r["doc_id"] for r in rows]
         elif item.expected_mode == "semantic":
-            # V2.6 Phase 5.4 의존 — placeholder
-            returned = []
+            # V2.6 Phase 5.4 활성: IRIS_SEMANTIC=on + FAISS 인덱스 존재 시
+            from apps.wiki.semantic import query_semantic
+            rows = query_semantic(item.question, lane=None, limit=top_k)
+            returned = [r["doc_id"] for r in rows]
         else:
             err = f"unknown mode: {item.expected_mode}"
     except Exception as e:

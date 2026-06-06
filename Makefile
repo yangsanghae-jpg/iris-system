@@ -1,6 +1,6 @@
 .PHONY: ingest-reference reindex-fts stats clean-reference \
         migrate-v2.6 migrate-v2.6-status migrate-v2.6-down migrate-v2.6-dry \
-        eval eval-baseline test
+        eval eval-baseline test build-faiss
 
 PYTHON ?= python3
 ROOT := $(shell pwd)
@@ -42,15 +42,20 @@ eval:
 	@ts=$$(date -u +%Y-%m-%d_%H%M); \
 	out=eval_runs/$$ts/run.json; \
 	mkdir -p eval_runs/$$ts; \
-	$(PYTHON) -m apps.eval.run_golden --out $$out
+	IRIS_SEMANTIC=$${IRIS_SEMANTIC:-on} $(PYTHON) -m apps.eval.run_golden --out $$out
 
 eval-baseline:
 	@mkdir -p eval_runs
 	@ts=$$(date -u +%Y-%m-%d_%H%M); \
 	out=eval_runs/baseline_$$ts.json; \
-	$(PYTHON) -m apps.eval.run_golden --out $$out
+	IRIS_SEMANTIC=$${IRIS_SEMANTIC:-on} $(PYTHON) -m apps.eval.run_golden --out $$out
 
 # --- 회귀 테스트 ---
 
 test:
 	$(PYTHON) -m pytest tests/ -v
+
+# --- V2.6 Phase 5.4 — FAISS 시맨틱 인덱스 빌드 ---
+
+build-faiss:
+	$(PYTHON) -m apps.eval.build_faiss
