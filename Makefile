@@ -9,10 +9,9 @@ ingest-reference:
 	$(PYTHON) apps/ingest/reference_diagnosis.py
 
 reindex-fts:
-	@sqlite3 knowledge/_index.db "DELETE FROM documents_fts; \
-		INSERT INTO documents_fts (rowid, title, body) \
-		SELECT d.rowid, COALESCE(d.title,''), COALESCE(GROUP_CONCAT(c.text, char(10)),'') \
-		FROM documents d LEFT JOIN chunks c ON c.doc_id=d.doc_id GROUP BY d.doc_id;"
+	$(PYTHON) -c "from apps.ingest.fts_sync import rebuild_all; import sqlite3; \
+	c=sqlite3.connect('knowledge/_index.db'); \
+	print(rebuild_all(c)); c.commit(); c.close()"
 
 stats:
 	@sqlite3 knowledge/_index.db "SELECT lane, area, COUNT(*) FROM documents GROUP BY 1,2 ORDER BY 3 DESC"

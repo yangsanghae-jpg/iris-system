@@ -515,15 +515,12 @@ def dispatch(conn) -> dict[str, int]:
 
 
 def rebuild_fts(conn):
-    conn.execute("DELETE FROM documents_fts")
-    conn.execute(
-        """INSERT INTO documents_fts (rowid, title, body)
-           SELECT d.rowid, COALESCE(d.title, ''),
-                  COALESCE(GROUP_CONCAT(c.text, char(10)), '')
-           FROM documents d
-           LEFT JOIN chunks c ON c.doc_id = d.doc_id
-           GROUP BY d.doc_id"""
-    )
+    """V2.5.3 §15: dual-tokenizer 동기 (documents_fts + documents_fts_trigram)."""
+    try:
+        from .fts_sync import rebuild_all
+    except ImportError:
+        from apps.ingest.fts_sync import rebuild_all
+    return rebuild_all(conn)
 
 
 def main():

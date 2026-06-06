@@ -19,7 +19,13 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .origin_rules import IngestSource, origin_for
+try:
+    from .origin_rules import IngestSource, origin_for
+except ImportError:
+    # 스크립트 직접 실행 시
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+    from apps.ingest.origin_rules import IngestSource, origin_for
 
 REPO_ROOT = Path("/Users/iris/Documents/0Dev")
 IRIS_ROOT = REPO_ROOT / "iris-system"
@@ -156,9 +162,15 @@ def main() -> int:
         "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
         (now_iso(),),
     )
+    # V2.5.3 §15: FTS dual-tokenizer 동기 (raw 신규 ingest 후 자동)
+    try:
+        from .fts_sync import rebuild_all
+    except ImportError:
+        from apps.ingest.fts_sync import rebuild_all
+    counts = rebuild_all(conn)
     conn.commit()
     conn.close()
-    print(f"[DONE] {len(files)} files, {total_chunks} chunks")
+    print(f"[DONE] {len(files)} files, {total_chunks} chunks, FTS: {counts}")
     return 0
 
 
