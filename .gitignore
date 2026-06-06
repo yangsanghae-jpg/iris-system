@@ -11,3 +11,6 @@ storage
 
 # Quartz: 자체 git repo, V2.6에서 별도 종속 관계 결정 예정
 apps/quartz/
+
+# eval_runs: 실행마다 새로 생성되는 측정 결과 (golden_qa는 추적, runs는 제외)
+eval_runs/

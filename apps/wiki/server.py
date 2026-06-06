@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Header, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 try:
@@ -125,7 +125,20 @@ def wiki_merge(req: MergeRequest):
     ),
 )
 def wiki_query(req: QueryRequest):
-    return query(req.question)
+    from fastapi.responses import JSONResponse
+    from .secure_gate import filter_secure_rows
+
+    result = query(req.question)
+    # V2.6 Phase 2.4 — K5 secure 응답 차단
+    candidates = result.get("candidates", [])
+    if isinstance(candidates, list):
+        filtered, excluded = filter_secure_rows(candidates)
+        result["candidates"] = filtered
+        return JSONResponse(
+            content=result,
+            headers={"X-IRIS-Secure-Excluded": str(excluded)},
+        )
+    return result
 
 
 @app.get(
@@ -158,3 +171,150 @@ def wiki_history(
 ):
     items = list_recent_history(limit=limit)
     return {"status": "ok", "count": len(items), "items": items}
+
+
+# ─── V2.6 Phase 5 — K5 표준 API (/api/v1/retrieval) ──────────────────────
+
+import time
+try:
+    from .dispatcher import dispatch
+    from .secure_gate import filter_secure_rows
+    from . import telemetry
+except ImportError:
+    from dispatcher import dispatch
+    from secure_gate import filter_secure_rows
+    import telemetry
+
+
+@app.get(
+    "/api/v1/retrieval",
+    tags=["K5 표준"],
+    summary="K5 표준 retrieval (V2.5 §5 정본)",
+    description=(
+        "단일 retrieval 엔드포인트 (V2.5 §5).\n\n"
+        "- 헤더 `X-IRIS-Caller` 필수 (누락 시 telemetry에 FAULT:anonymous)\n"
+        "- 응답 헤더 `X-IRIS-Secure-Excluded` (V2.6 Phase 2)\n"
+        "- 응답 헤더 `X-IRIS-Mode` (실제 사용된 모드, auto 폴백 시 변경됨)\n"
+        "- mode=auto 휴리스틱: matrix(키 셋 있음) → fts → semantic(활성 시)"
+    ),
+)
+def k5_retrieval(
+    request: Request,
+    q: str = Query("", description="검색 텍스트"),
+    mode: str = Query("auto", pattern="^(auto|matrix|fts|semantic)$"),
+    industry: str | None = Query(None),
+    area: str | None = Query(None),
+    level: str | None = Query(None),
+    lane: str | None = Query(None, description="기본 None=전체 (단 secure는 자동 제외)"),
+    limit: int = Query(20, ge=1, le=100),
+    x_iris_caller: str | None = Header(None, alias="X-IRIS-Caller"),
+):
+    from fastapi.responses import JSONResponse
+
+    t0 = time.perf_counter()
+    rows, effective_mode, fallback, fallback_to = dispatch(
+        mode, q,
+        industry=industry, area=area, level=level, lane=lane, limit=limit,
+    )
+    filtered, excluded = filter_secure_rows(rows)
+    latency_ms = (time.perf_counter() - t0) * 1000.0
+
+    telemetry.append(
+        endpoint="/api/v1/retrieval",
+        caller=x_iris_caller,
+        mode=effective_mode,
+        industry=industry, area=area, lane=lane,
+        query_len=len(q or ""),
+        result_count=len(filtered),
+        latency_ms=latency_ms,
+        secure_excluded=excluded,
+        fallback=fallback,
+        fallback_to=fallback_to,
+    )
+
+    return JSONResponse(
+        content={
+            "ok": True,
+            "mode": effective_mode,
+            "fallback": fallback,
+            "fallback_to": fallback_to,
+            "count": len(filtered),
+            "results": filtered,
+        },
+        headers={
+            "X-IRIS-Mode": effective_mode,
+            "X-IRIS-Secure-Excluded": str(excluded),
+            "X-IRIS-Fallback": "1" if fallback else "0",
+        },
+    )
+
+
+@app.get(
+    "/api/v1/skills/knowledge_search",
+    tags=["K5 Skill"],
+    summary="Skill: knowledge_search (V2.6 Phase 5.8 시범)",
+    description=(
+        "외부 LLM Wiki V1.0의 Knowledge_Search Skill 사상을 thin wrapper로 채용.\n"
+        "fts + semantic(활성 시) 앙상블, lane=secure 자동 제외, X-IRIS-Caller 필수."
+    ),
+)
+def skill_knowledge_search(
+    request: Request,
+    q: str = Query(..., description="검색 텍스트 (필수)"),
+    industry: str | None = Query(None),
+    area: str | None = Query(None),
+    limit: int = Query(10, ge=1, le=50),
+    x_iris_caller: str | None = Header(None, alias="X-IRIS-Caller"),
+):
+    """fts + semantic 앙상블 — 중복 doc_id 제거, fts 우선."""
+    from fastapi.responses import JSONResponse
+    from .retrieval import query_fts
+    from .semantic import is_active as semantic_active, query_semantic
+
+    t0 = time.perf_counter()
+    fts_rows = query_fts(q, industry=industry, area=area, lane=None, limit=limit)
+    sem_rows = (
+        query_semantic(q, industry=industry, area=area, lane=None, limit=limit)
+        if semantic_active() else []
+    )
+
+    seen: set[str] = set()
+    merged: list[dict] = []
+    for r in fts_rows + sem_rows:
+        did = r.get("doc_id")
+        if did in seen:
+            continue
+        seen.add(did)
+        merged.append(r)
+
+    filtered, excluded = filter_secure_rows(merged)
+    latency_ms = (time.perf_counter() - t0) * 1000.0
+
+    telemetry.append(
+        endpoint="/api/v1/skills/knowledge_search",
+        caller=x_iris_caller,
+        mode="ensemble",
+        industry=industry, area=area, lane=None,
+        query_len=len(q or ""),
+        result_count=len(filtered),
+        latency_ms=latency_ms,
+        secure_excluded=excluded,
+        fallback=False,
+        fallback_to=None,
+        extra={"fts_count": len(fts_rows), "semantic_count": len(sem_rows)},
+    )
+
+    return JSONResponse(
+        content={
+            "ok": True,
+            "skill": "knowledge_search",
+            "fts_count": len(fts_rows),
+            "semantic_count": len(sem_rows),
+            "count": len(filtered),
+            "results": filtered[:limit],
+        },
+        headers={
+            "X-IRIS-Skill": "knowledge_search",
+            "X-IRIS-Secure-Excluded": str(excluded),
+        },
+    )

@@ -73,6 +73,11 @@ def flatten_json(obj, prefix: str = "", out: list[str] | None = None) -> list[st
 
 
 def upsert_doc(conn, doc_id, path, industry, area, level, title, body):
+    # V2.6 Phase 2.1/2.2: K1/K3 게이트 — secure lane 진입 차단
+    # (LANE='reference' 모듈 상수라 정상 호출엔 영향 없음. 의도적 secure는 secure_intake.py 사용)
+    from apps.wiki.secure_gate import assert_not_secure
+    assert_not_secure(LANE, "K1", doc_id=doc_id)
+
     conn.execute(
         """INSERT INTO documents
            (doc_id, path, lane, trust, industry, area, level, title, fetched_at)
