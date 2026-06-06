@@ -231,7 +231,12 @@ def query_fts(
     lane: Optional[str] = "reference",
     limit: int = 20,
 ) -> List[Dict[str, Any]]:
-    """K5-② FTS5 MATCH query, joined with documents metadata."""
+    """K5-② FTS5 MATCH query, joined with documents metadata.
+
+    V2.5.3 §14: dual-tokenizer 폴백.
+      1차: documents_fts (unicode61) — 한국어·영문 강점
+      2차: documents_fts_trigram (trigram, 3-gram) — CJK 보조 (4글자 이상)
+    """
     text = (text or "").strip()
     if not text:
         return []
@@ -239,24 +244,43 @@ def query_fts(
     if conn is None:
         return []
     try:
-        where, params = ["documents_fts MATCH ?"], [text]
-        if industry is not None:
-            where.append("d.industry = ?")
-            params.append(industry)
-        if area is not None:
-            where.append("d.area = ?")
-            params.append(area)
-        if lane is not None:
-            where.append("d.lane = ?")
-            params.append(lane)
-        sql = (
-            "SELECT d.doc_id, d.path, d.lane, d.industry, d.area, d.level, d.title, "
-            "bm25(documents_fts) AS rank "
-            "FROM documents_fts JOIN documents d ON d.rowid = documents_fts.rowid "
-            "WHERE " + " AND ".join(where) + " ORDER BY rank LIMIT ?"
-        )
-        params.append(int(limit))
-        rows = conn.execute(sql, params).fetchall()
-        return [dict(r) for r in rows]
+        rows = _query_fts_table(conn, "documents_fts", text, industry, area, lane, limit)
+        if not rows:
+            rows = _query_fts_table(conn, "documents_fts_trigram", text, industry, area, lane, limit)
+        return rows
     finally:
         conn.close()
+
+
+def _query_fts_table(
+    conn,
+    table: str,
+    text: str,
+    industry: Optional[str],
+    area: Optional[str],
+    lane: Optional[str],
+    limit: int,
+) -> List[Dict[str, Any]]:
+    where = [f"{table} MATCH ?"]
+    params: list = [text]
+    if industry is not None:
+        where.append("d.industry = ?")
+        params.append(industry)
+    if area is not None:
+        where.append("d.area = ?")
+        params.append(area)
+    if lane is not None:
+        where.append("d.lane = ?")
+        params.append(lane)
+    sql = (
+        "SELECT d.doc_id, d.path, d.lane, d.industry, d.area, d.level, d.title, "
+        f"bm25({table}) AS rank "
+        f"FROM {table} JOIN documents d ON d.rowid = {table}.rowid "
+        "WHERE " + " AND ".join(where) + " ORDER BY rank LIMIT ?"
+    )
+    params.append(int(limit))
+    try:
+        rows = conn.execute(sql, params).fetchall()
+    except Exception:
+        return []
+    return [dict(r) for r in rows]

@@ -22,6 +22,11 @@ CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
   title, body, tokenize='unicode61'
 );
 
+-- V2.5.3 §14: 보조 trigram 인덱스 (CJK + 부분 매치). 한국어·영문은 unicode61 우선.
+CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts_trigram USING fts5(
+  title, body, tokenize='trigram'
+);
+
 CREATE TABLE IF NOT EXISTS chunks (
   chunk_id TEXT PRIMARY KEY,
   doc_id   TEXT NOT NULL REFERENCES documents(doc_id) ON DELETE CASCADE,
