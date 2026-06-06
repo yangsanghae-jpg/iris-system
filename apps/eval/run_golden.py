@@ -32,6 +32,7 @@ class GoldenItem:
     expected_mode: str          # fts | matrix | semantic
     industry: str | None = None
     area: str | None = None
+    level: str | None = None
     notes: str = ""
 
 
@@ -86,9 +87,9 @@ def run_item(item: GoldenItem, top_k: int = 5) -> ItemResult:
             returned = [r["doc_id"] for r in rows]
         elif item.expected_mode == "matrix":
             rows = query_matrix(
-                None,
                 industry=item.industry,
                 area=item.area,
+                level=item.level,
                 lane=None,
                 limit=top_k,
             )
