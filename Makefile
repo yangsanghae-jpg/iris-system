@@ -1,6 +1,6 @@
 .PHONY: ingest-reference reindex-fts stats clean-reference \
         migrate-v2.6 migrate-v2.6-status migrate-v2.6-down migrate-v2.6-dry \
-        eval eval-baseline test build-faiss
+        eval eval-baseline eval-all test build-faiss
 
 PYTHON ?= python3
 ROOT := $(shell pwd)
@@ -42,12 +42,22 @@ eval:
 	@ts=$$(date -u +%Y-%m-%d_%H%M); \
 	out=eval_runs/$$ts/run.json; \
 	mkdir -p eval_runs/$$ts; \
-	IRIS_SEMANTIC=$${IRIS_SEMANTIC:-on} $(PYTHON) -m apps.eval.run_golden --out $$out
+	IRIS_SEMANTIC=$${IRIS_SEMANTIC:-on} $(PYTHON) -m apps.eval.run_golden \
+		--lane $${IRIS_EVAL_LANE:-bronze} --out $$out
 
 eval-baseline:
 	@mkdir -p eval_runs
 	@ts=$$(date -u +%Y-%m-%d_%H%M); \
 	out=eval_runs/baseline_$$ts.json; \
+	IRIS_SEMANTIC=$${IRIS_SEMANTIC:-on} $(PYTHON) -m apps.eval.run_golden \
+		--lane $${IRIS_EVAL_LANE:-bronze} --out $$out
+
+# V2.5.3 §17 — 전 lane (reference 포함) 측정용. M5에서 reference 매치 검증.
+eval-all:
+	@mkdir -p eval_runs
+	@ts=$$(date -u +%Y-%m-%d_%H%M); \
+	out=eval_runs/$$ts/run_all.json; \
+	mkdir -p eval_runs/$$ts; \
 	IRIS_SEMANTIC=$${IRIS_SEMANTIC:-on} $(PYTHON) -m apps.eval.run_golden --out $$out
 
 # --- 회귀 테스트 ---

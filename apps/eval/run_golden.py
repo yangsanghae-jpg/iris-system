@@ -74,7 +74,7 @@ def load_golden(path: Path) -> list[GoldenItem]:
     return items
 
 
-def run_item(item: GoldenItem, top_k: int = 5) -> ItemResult:
+def run_item(item: GoldenItem, top_k: int = 5, lane: str | None = None) -> ItemResult:
     from apps.wiki.retrieval import query_fts, query_matrix
 
     t0 = time.perf_counter()
@@ -83,21 +83,21 @@ def run_item(item: GoldenItem, top_k: int = 5) -> ItemResult:
 
     try:
         if item.expected_mode == "fts":
-            rows = query_fts(item.question, lane=None, limit=top_k)
+            rows = query_fts(item.question, lane=lane, limit=top_k)
             returned = [r["doc_id"] for r in rows]
         elif item.expected_mode == "matrix":
             rows = query_matrix(
                 industry=item.industry,
                 area=item.area,
                 level=item.level,
-                lane=None,
+                lane=lane,
                 limit=top_k,
             )
             returned = [r["doc_id"] for r in rows]
         elif item.expected_mode == "semantic":
             # V2.6 Phase 5.4 활성: IRIS_SEMANTIC=on + FAISS 인덱스 존재 시
             from apps.wiki.semantic import query_semantic
-            rows = query_semantic(item.question, lane=None, limit=top_k)
+            rows = query_semantic(item.question, lane=lane, limit=top_k)
             returned = [r["doc_id"] for r in rows]
         else:
             err = f"unknown mode: {item.expected_mode}"
@@ -160,10 +160,10 @@ def aggregate(items: list[ItemResult]) -> dict[str, dict[str, float]]:
     return out
 
 
-def run(golden_path: Path, top_k: int = 5) -> RunSummary:
+def run(golden_path: Path, top_k: int = 5, lane: str | None = None) -> RunSummary:
     items = load_golden(golden_path)
     started = now_iso()
-    results = [run_item(it, top_k=top_k) for it in items]
+    results = [run_item(it, top_k=top_k, lane=lane) for it in items]
     finished = now_iso()
     return RunSummary(
         started_at=started,
@@ -178,14 +178,17 @@ def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--golden", default=str(DEFAULT_GOLDEN))
     p.add_argument("--top-k", type=int, default=5)
+    p.add_argument("--lane", default=None,
+                   help="lane 필터 (bronze/silver/gold/reference). V2.5.3 §17: M5/M2 동등 측정용. None=전체")
     p.add_argument("--out", default=None, help="결과 JSON 저장 경로")
     p.add_argument("--quiet", action="store_true")
     args = p.parse_args()
 
-    summary = run(Path(args.golden), top_k=args.top_k)
+    summary = run(Path(args.golden), top_k=args.top_k, lane=args.lane)
 
     if not args.quiet:
-        print(f"[Golden Q&A baseline] {summary.item_count} items")
+        lane_tag = f" lane={args.lane}" if args.lane else ""
+        print(f"[Golden Q&A baseline]{lane_tag} {summary.item_count} items")
         for mode, stats in summary.by_mode.items():
             print(f"  {mode:9s}  hit@5={stats['hit_at_5']}/{stats['evaluable']} "
                   f"({stats['hit_at_5_rate']*100:.0f}%)  MRR={stats['mrr']:.3f}  "
