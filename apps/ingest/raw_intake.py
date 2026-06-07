@@ -57,9 +57,19 @@ def slugify(name: str) -> str:
 
 
 def doc_id_for(path: Path) -> str:
-    stem = path.stem
-    short_hash = hashlib.sha1(str(path).encode("utf-8")).hexdigest()[:8]
-    return f"raw:{slugify(stem)}:{short_hash}"
+    """V2.5.3 §18: 내용 기반 결정적 doc_id.
+
+    이전 (5500c86 이전): `raw:{slugify(stem)}:{sha1(path)[:8]}` — 파일명·경로 의존.
+        M2/M5 양쪽이 같은 raw 파일에 *다른 doc_id*를 생성하는 사고 (V2.5.3 §18).
+
+    현재: `raw:{sha1(content)[:12]}` — 내용 기반.
+        - 같은 파일 = 어디서든 같은 doc_id (M2/M5 보장)
+        - 파일명 변경 시 doc_id 안정
+        - 내용 변경 시 새 doc_id (의도된 동작)
+        - 가독성은 documents.title 이 담당
+    """
+    content_hash = hashlib.sha1(path.read_bytes()).hexdigest()[:12]
+    return f"raw:{content_hash}"
 
 
 def split_chunks(text: str) -> list[str]:
