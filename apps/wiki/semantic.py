@@ -63,7 +63,14 @@ def query_semantic(
     # cosine = L2-normalized inner product. 임베딩이 정규화되지 않았을 수 있으니 normalize_L2 강제.
     faiss.normalize_L2(q)
 
-    k = min(limit * 4, len(meta))  # 동일 doc_id 중복 제거 위해 over-fetch
+    # V2.5.3 §19: lane/industry/area 필터는 후처리 패턴이라 over-fetch 부족 시
+    # 필터 후 limit 미달 위험. 필터 인자가 있으면 over-fetch 대폭 확대.
+    # (M5 환경 reference 630+ bronze 5에서 Q012 hit@5=2/3 → 3/3 회복용)
+    if industry or area or lane:
+        k_multiplier = int(os.environ.get("IRIS_SEMANTIC_FILTERED_K", "50"))
+    else:
+        k_multiplier = int(os.environ.get("IRIS_SEMANTIC_K", "4"))
+    k = min(limit * k_multiplier, len(meta))
     if k <= 0:
         return []
     scores, ids = index.search(q, k)
